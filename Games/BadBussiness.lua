@@ -70,8 +70,25 @@ local Window = UI_LIB:Window({
 	Name = "Bad Business",
 	Position = UDim2.new(0.05,0,0.5,-248)
 }) do Window:Watermark({Enabled = true})
+	local VisualsTab = Window:Tab({Name = "Visuals"}) do
+		local GlobalSection = VisualsTab:Section({Name = "ESP",Side = "Left"}) do
+			GlobalSection:Colorpicker({Name = "Enable ESP",Flag = "ESP/Enable",Value = {0.3333333432674408,0.6666666269302368,1,0,false}})
+			
+		end
+		
+		local TracerSection = VisualsTab:Section({Name = "Tracers",Side = "Right"}) do
+			TracerSection:Toggle({Name = "Enabled",Flag = "ESP/Player/Tracer/Enabled",Value = false})
+			TracerSection:Dropdown({Name = "Mode",Flag = "ESP/Player/Tracer/Mode",List = {
+				{Name = "From Bottom",Mode = "Button",Value = true},
+				{Name = "From Mouse",Mode = "Button"}
+			}})
+			TracerSection:Slider({Name = "Thickness",Flag = "ESP/Player/Tracer/Thickness",Min = 1,Max = 10,Value = 1})
+			TracerSection:Slider({Name = "Transparency",Flag = "ESP/Player/Tracer/Transparency",Min = 0,Max = 1,Precise = 2,Value = 0})
+		end
+	end
+	
 	local AimAssistTab = Window:Tab({Name = "Aimbot"})
-	local SilentAimSection = AimAssistTab:Section({Name = "Silent Aim",Side = "Right"}) do
+	local SilentAimSection = AimAssistTab:Section({Name = "Silent Aim",Side = "Left"}) do
 		SilentAimSection:Toggle({Name = "Enabled",Flag = "SilentAim/Enabled",Value = false})
 		:Keybind({Mouse = true,Flag = "SilentAim/Keybind"})
 		SilentAimSection:Toggle({Name = "AutoShoot",Flag = "BadBusiness/AutoShoot",Value = false})
@@ -89,48 +106,724 @@ local Window = UI_LIB:Window({
 			{Name = "Abdomen",Mode = "Toggle"},
 			{Name = "Hips",Mode = "Toggle"}
 		}})
-		
-		
 	end
 	
-	local VisualsTab = Window:Tab({Name = "Visuals"}) do
-		local GlobalSection = VisualsTab:Section({Name = "ESP",Side = "Left"}) do
-			GlobalSection:Colorpicker({Name = "Ally Color",Flag = "ESP/Player/Ally",Value = {0.3333333432674408,0.6666666269302368,1,0,false}})
-			GlobalSection:Colorpicker({Name = "Enemy Color",Flag = "ESP/Player/Enemy",Value = {1,0.6666666269302368,1,0,false}})
-			GlobalSection:Toggle({Name = "Team Check",Flag = "ESP/Player/TeamCheck",Value = true})
-			GlobalSection:Toggle({Name = "Use Team Color",Flag = "ESP/Player/TeamColor",Value = false})
-			GlobalSection:Toggle({Name = "Distance Check",Flag = "ESP/Player/DistanceCheck",Value = false})
-			GlobalSection:Slider({Name = "Distance",Flag = "ESP/Player/Distance",Min = 25,Max = 1000,Value = 250,Unit = "meters"})
-		end
-		local BoxSection = VisualsTab:Section({Name = "ESP Boxes",Side = "Left"}) do
-			BoxSection:Toggle({Name = "Box Enabled",Flag = "ESP/Player/Box/Enabled",Value = false})
-			BoxSection:Toggle({Name = "Healthbar",Flag = "ESP/Player/Box/Healthbar",Value = false})
-			BoxSection:Divider()
-			BoxSection:Toggle({Name = "Text Enabled",Flag = "ESP/Player/Text/Enabled",Value = false})
-			BoxSection:Dropdown({Name = "Font",Flag = "ESP/Player/Text/Font",List = {
-				{Name = "UI",Mode = "Button",Value = true},
-				{Name = "System",Mode = "Button"},
-				{Name = "Plex",Mode = "Button"},
-				{Name = "Monospace",Mode = "Button"}
-			}})
-			BoxSection:Slider({Name = "Size",Flag = "ESP/Player/Text/Size",Min = 13,Max = 100,Value = 16})
-			BoxSection:Slider({Name = "Transparency",Flag = "ESP/Player/Text/Transparency",Min = 0,Max = 1,Precise = 2,Value = 0})
-		end
-		
-		local TracerSection = VisualsTab:Section({Name = "Tracers",Side = "Right"}) do
-			TracerSection:Toggle({Name = "Enabled",Flag = "ESP/Player/Tracer/Enabled",Value = false})
-			TracerSection:Dropdown({Name = "Mode",Flag = "ESP/Player/Tracer/Mode",List = {
-				{Name = "From Bottom",Mode = "Button",Value = true},
-				{Name = "From Mouse",Mode = "Button"}
-			}})
-			TracerSection:Slider({Name = "Thickness",Flag = "ESP/Player/Tracer/Thickness",Min = 1,Max = 10,Value = 1})
-			TracerSection:Slider({Name = "Transparency",Flag = "ESP/Player/Tracer/Transparency",Min = 0,Max = 1,Precise = 2,Value = 0})
-		end
-	end
 	local MiscTab = Window:Tab({Name = "Miscellaneous"}) do
 		local GMSection = MiscTab:Section({Name = "GunMods",Side = "Left"}) do
 			GMSection:Toggle({Name = "Infinite Ammo",Flag = "Gunmods/InfAmmo",Value = false})
 		end
+	end
+	
+	if Window.Flags["ESP/Enable"] == true then
+		--// SERVICES \\--
+		local playerser = game:GetService("Players")
+		local repstor = game:GetService("ReplicatedStorage")
+		local repfirst = game:GetService("ReplicatedFirst")
+		local inputser = game:GetService("UserInputService")
+		local runser = game:GetService("RunService")
+		local coregui = game:GetService("CoreGui")
+		local tweenser = game:GetService("TweenService")
+
+		--// VARIABLES \\--
+		local client = playerser.LocalPlayer
+		local camera = workspace.CurrentCamera
+		local playergui = client:WaitForChild("PlayerGui")
+		playergui:SetTopbarTransparency(1)
+		local mouse = client:GetMouse()
+		local heartbeat = runser.Heartbeat
+		local renderstep = runser.RenderStepped
+
+		--// LOCALS \\--
+		local colors = {
+			esp = Color3.fromRGB(171, 73, 245),
+			esp_visible = Color3.fromRGB(255, 128, 234),
+			minDistance = Color3.fromRGB(0, 255, 127)
+		}
+		local options = {
+			drawMinDistance = true, --// toggles circle visibility
+			minDistance = 50, --// minimum distance from crosshair to lock on
+		}
+		local aimbotting = false
+		local sg = Instance.new("ScreenGui", coregui)
+		local espFolder = Instance.new("Folder", sg)
+
+		local circle = Instance.new("ImageLabel")
+		circle.Position = UDim2.new(0.5,0,0.5,-18)
+		circle.AnchorPoint = Vector2.new(0.5,0.5)
+		circle.Size = UDim2.new(0,options.minDistance*2,0,options.minDistance*2)
+		circle.BackgroundTransparency = 1
+		circle.ImageColor3 = colors.minDistance
+		circle.Image = "rbxassetid://3400997895"
+		if options.drawMinDistance then
+			circle.Parent = sg
+		end
+
+		local bodyParts = {
+			["Head"] = true,
+			["Chest"] = true,
+			["Abdomen"] = true,
+			["Hips"] = true,
+			["LeftUpperArm"] = true,
+			["RightUpperArm"] = true,
+			["RightLowerArm"] = true,
+			["LeftLowerArm"] = true,
+			["LeftHand"] = true,
+			["RightHand"] = true,
+			["LeftUpperLeg"] = true,
+			["RightUpperLeg"] = true,
+			["LeftLowerLeg"] = true,
+			["RightLowerLeg"] = true,
+			["LeftFoot"] = true,
+			["RightFoot"] = true
+		}
+		--// FUNCTIONS \\--
+		function mouseMove(x,y)
+			if syn  then
+				mousemoverel(x,y)
+			end
+		end
+		local function createBox(player)
+			local lines = Instance.new("Frame")
+			lines.Name = player.Name
+			lines.BackgroundTransparency = 1
+			lines.AnchorPoint = Vector2.new(0.5,0.5)
+
+			local outlines = Instance.new("Folder", lines)
+			outlines.Name = "outlines"
+			local inlines = Instance.new("Folder", lines)
+			inlines.Name = "inlines"
+
+			local outline1 = Instance.new("Frame", outlines)
+			outline1.Name = "left"
+			outline1.BorderSizePixel = 0
+			outline1.BackgroundColor3 = Color3.new(0,0,0)
+			outline1.Size = UDim2.new(0,-1,1,0)
+
+			local outline2 = Instance.new("Frame", outlines)
+			outline2.Name = "right"
+			outline2.BorderSizePixel = 0
+			outline2.BackgroundColor3 = Color3.new(0,0,0)
+			outline2.Position = UDim2.new(1,0,0,0)
+			outline2.Size = UDim2.new(0,1,1,0)
+
+			local outline3 = Instance.new("Frame", outlines)
+			outline3.Name = "up"
+			outline3.BorderSizePixel = 0
+			outline3.BackgroundColor3 = Color3.new(0,0,0)
+			outline3.Size = UDim2.new(1,0,0,-1)
+
+			local outline4 = Instance.new("Frame", outlines)
+			outline4.Name = "down"
+			outline4.BorderSizePixel = 0
+			outline4.BackgroundColor3 = Color3.new(0,0,0)
+			outline4.Position = UDim2.new(0,0,1,0)
+			outline4.Size = UDim2.new(1,0,0,1)
+
+			local inline1 = Instance.new("Frame", inlines)
+			inline1.Name = "left"
+			inline1.BorderSizePixel = 0
+			inline1.Size = UDim2.new(0,1,1,0)
+
+			local inline2 = Instance.new("Frame", inlines)
+			inline2.Name = "right"
+			inline2.BorderSizePixel = 0
+			inline2.Position = UDim2.new(1,0,0,0)
+			inline2.Size = UDim2.new(0,-1,1,0)
+
+			local inline3 = Instance.new("Frame", inlines)
+			inline3.Name = "up"
+			inline3.BorderSizePixel = 0
+			inline3.Size = UDim2.new(1,0,0,1)
+
+			local inline4 = Instance.new("Frame", inlines)
+			inline4.Name = "down"
+			inline4.BorderSizePixel = 0
+			inline4.Position = UDim2.new(0,0,1,0)
+			inline4.Size = UDim2.new(1,0,0,-1)
+
+			local text = Instance.new("TextLabel", lines)
+			text.Name = "nametag"
+			text.Position =  UDim2.new(0.5,0,0,-12)
+			text.Size = UDim2.new(0,100,0,-20)
+			text.AnchorPoint = Vector2.new(0.5,0.5)
+			text.BackgroundTransparency = 1
+			text.Text = player.Name
+			text.Font = Enum.Font.Code
+			text.TextSize = 14
+			text.TextStrokeTransparency = 0
+
+			local health = Instance.new("Frame", lines)
+			health.Name = "health"
+			health.Position = UDim2.new(0,1,1,-1)
+			health.Size = UDim2.new(0.1,0,1,-2)
+			health.AnchorPoint = Vector2.new(0,1)
+			health.BackgroundTransparency = 0
+			health.BackgroundColor3 = Color3.fromRGB(30,30,30)
+			health.BorderSizePixel = 0
+			local bar = Instance.new("Frame", health)
+			bar.Name = "bar"
+			bar.Position = UDim2.new(0,0,1,0)
+			bar.AnchorPoint = Vector2.new(0,1)
+			bar.BackgroundTransparency = 0
+			bar.BackgroundColor3 = Color3.fromRGB(0,255,127)
+			bar.BorderSizePixel = 0
+
+			return lines
+		end
+
+		local function updateEsp(player, box)
+			runser:BindToRenderStep(player.Name.."'s esp", 1, function()
+				local clientchar = workspace.Characters:FindFirstChild(client.Name)
+				local xMin = camera.ViewportSize.X
+				local yMin = camera.ViewportSize.Y
+				local xMax = 0
+				local yMax = 0
+				if player and player:FindFirstChild"Body" and player.Body:FindFirstChild"Head" then
+					local screenPos, vis = camera:WorldToScreenPoint(player.PrimaryPart.Position)
+					local nameTagPos = camera:WorldToScreenPoint(player.Body.Head.Position)
+					if vis then
+						box.Visible = true
+						local function getCorners(obj, size)
+							local corners = {
+								Vector3.new(obj.X+size.X/2, obj.Y+size.Y/2, obj.Z+size.Z/2);
+								Vector3.new(obj.X-size.X/2, obj.Y+size.Y/2, obj.Z+size.Z/2);
+
+								Vector3.new(obj.X-size.X/2, obj.Y-size.Y/2, obj.Z-size.Z/2);
+								Vector3.new(obj.X+size.X/2, obj.Y-size.Y/2, obj.Z-size.Z/2);
+
+								Vector3.new(obj.X-size.X/2, obj.Y+size.Y/2, obj.Z-size.Z/2);
+								Vector3.new(obj.X+size.X/2, obj.Y+size.Y/2, obj.Z-size.Z/2);
+
+								Vector3.new(obj.X-size.X/2, obj.Y-size.Y/2, obj.Z+size.Z/2);
+								Vector3.new(obj.X+size.X/2, obj.Y-size.Y/2, obj.Z+size.Z/2);
+							}
+							return corners
+						end
+						local i = 1
+						local allCorners = {}
+						for _,v in pairs(player.Body:GetChildren()) do
+							if bodyParts[v.Name] then
+								local a = getCorners(v.CFrame, v.Size)
+								for _,v in pairs(a) do
+									table.insert(allCorners, i, v)
+									i = i + 1
+								end
+							end
+						end
+						for i,v in pairs(allCorners) do
+							local pos = camera:WorldToScreenPoint(v)
+							if pos.X > xMax then
+								xMax = pos.X
+							end
+							if pos.X < xMin then
+								xMin = pos.X
+							end
+							if pos.Y > yMax then
+								yMax = pos.Y
+							end
+							if pos.Y < yMin then
+								yMin = pos.Y
+							end
+						end
+						local xSize = xMax - xMin
+						local ySize = yMax - yMin
+						box.Position = UDim2.new(0,xMin+(Vector2.new(xMax,0)-Vector2.new(xMin,0)).magnitude/2,0,yMin+(Vector2.new(0,yMax)-Vector2.new(0,yMin)).magnitude/2)
+						box.Size = UDim2.new(0,xSize,0,ySize)
+
+						local ignore = {clientchar, camera, workspace:FindFirstChild"Arms"}
+						for _,v in pairs(workspace:GetChildren()) do
+							if v:IsA"Model" and v.Name ~= "Arms" then
+								table.insert(ignore, 4, v)
+							end
+						end
+						local ray = Ray.new(camera.CFrame.p, (player.Body.Head.Position-camera.CFrame.p).unit*1000)
+						local hit, pos = workspace:FindPartOnRayWithIgnoreList(ray, ignore, false, false)
+						local suffix
+						if hit and hit:FindFirstAncestor(player.Name) then
+							suffix = "_visible"
+						else
+							suffix = ""
+						end
+						for _,v in pairs(box.inlines:GetChildren()) do
+							v.BackgroundColor3 = colors["esp"..suffix]
+						end
+						box.nametag.TextColor3 = Color3.fromRGB(255, 255, 255)
+						if player:FindFirstChild"Health" then
+							box.health.bar.Size = UDim2.new(1,0,player.Health.Value/150,0)
+						end
+					else
+						box.Visible = false
+					end
+				else
+					box.Visible = false
+				end
+			end)
+		end
+
+		local function checkTeam(player, caller)
+			local omegaTeam = game.Teams.Omega.Players
+			local betaTeam = game.Teams.Beta.Players
+			local myTeam
+			if omegaTeam:FindFirstChild(client.Name) then
+				myTeam = "Omega"
+			elseif betaTeam:FindFirstChild(client.Name) then
+				myTeam = "Beta"
+			end
+			local enemyTeam
+			if omegaTeam:FindFirstChild(player.Name) then
+				enemyTeam = "Omega"
+			elseif betaTeam:FindFirstChild(player.Name) then
+				enemyTeam = "Beta"
+			end
+			if enemyTeam ~= myTeam then
+				if caller == "esp" then
+					local box = createBox(player)
+					updateEsp(player, box)
+					box.Parent = espFolder
+				end
+				return true
+			else
+				return false
+			end
+		end
+
+
+
+
+
+		for _,player in pairs(workspace.Characters:GetChildren()) do
+			checkTeam(player, "esp")
+		end
+
+		workspace.Characters.ChildAdded:connect(function(player)
+			checkTeam(player, "esp")
+		end)
+
+		workspace.Characters.ChildRemoved:connect(function(player)
+			runser:UnbindFromRenderStep(player.Name.."'s esp")
+			if espFolder:FindFirstChild(player.Name) then
+				espFolder[player.Name]:Destroy()
+			end
+		end)
+
+		local LocalPlayer, Characters, ESPList, LocalCharacter = game:GetService('Players').LocalPlayer, workspace.Characters, {}
+
+		local Leaderboard = LocalPlayer.PlayerGui.LeaderboardGui.Leaderboard
+		local function GetTeam(Player)
+			local Name = Player.Name
+			for i,v in next, Leaderboard.Teams:GetDescendants() do
+				if v.Name == 'NameLabel' and v.Text == Name then
+					return v.Parent.Parent.Parent
+				end
+			end
+		end
+
+		local Camera, Div = workspace.CurrentCamera, Vector2.new(2,2)
+		local function GetNearestToCenter()
+			local Center = Camera.ViewportSize / Div
+			local Character, CharacterDistance, ScreenPosition = nil, 0, nil
+			-- Created by Peyton @ V3rmillion
+			for i,v in next, Characters:GetChildren() do
+				if v.Name ~= LocalPlayer.Name and GetTeam(v) ~= GetTeam(LocalPlayer) and v:FindFirstChild('Health') and v.Health.Value > 0 and v:FindFirstChild('Hitbox') and v.Hitbox:FindFirstChild('Head') then
+					local clientchar = workspace.Characters:FindFirstChild(client.Name)
+					local ignore = {clientchar, camera, workspace:FindFirstChild"Arms"}
+					for _,v in pairs(workspace:GetChildren()) do
+						if v:IsA"Model" and v.Name ~= "Arms" then
+							table.insert(ignore, 4, v)
+						end
+					end
+					local ray = Ray.new(camera.CFrame.p, (v.Body.Head.Position-camera.CFrame.p).unit*1000)
+					local hit, pos = workspace:FindPartOnRayWithIgnoreList(ray, ignore, false, false)
+					if hit and hit:FindFirstAncestor(v.Name) then
+						local Position, OnScreen = Camera:WorldToViewportPoint(v.Hitbox.Head.Position)
+						if OnScreen then
+							local Vec2 = Vector2.new(Position.X, Position.Y)
+							local Distance = (Vec2 - Center).magnitude
+							if not Character or CharacterDistance > Distance then
+								Character, CharacterDistance, ScreenPosition = v, Distance, Vec2
+							end
+						end
+					end
+				end
+			end
+			return ScreenPosition and Center and (ScreenPosition - Center) or nil
+		end
+
+
+		local function Add(Character)
+			if Character == workspace.Characters:FindFirstChild(LocalPlayer.Name) then
+				LocalCharacter = Character
+			elseif GetTeam(Character) ~= GetTeam(LocalPlayer) then
+				--ESPList[Character] = NewCircle()
+			end
+		end
+
+		local function Remove(Character)
+			if ESPList[Character] then
+				ESPList[Character]:Remove()
+				ESPList[Character] = nil
+			end
+		end
+
+
+		for i,v in next, Characters:GetChildren() do Add(v) end
+		Characters.ChildAdded:Connect(Add)
+		Characters.ChildRemoved:Connect(Remove)
+	else
+		--// SERVICES \\--
+		local playerser = game:GetService("Players")
+		local repstor = game:GetService("ReplicatedStorage")
+		local repfirst = game:GetService("ReplicatedFirst")
+		local inputser = game:GetService("UserInputService")
+		local runser = game:GetService("RunService")
+		local coregui = game:GetService("CoreGui")
+		local tweenser = game:GetService("TweenService")
+
+		--// VARIABLES \\--
+		local client = playerser.LocalPlayer
+		local camera = workspace.CurrentCamera
+		local playergui = client:WaitForChild("PlayerGui")
+		playergui:SetTopbarTransparency(1)
+		local mouse = client:GetMouse()
+		local heartbeat = runser.Heartbeat
+		local renderstep = runser.RenderStepped
+
+		--// LOCALS \\--
+		local colors = {
+			esp = Color3.fromRGB(171, 73, 245),
+			esp_visible = Color3.fromRGB(255, 128, 234),
+			minDistance = Color3.fromRGB(0, 255, 127)
+		}
+		local options = {
+			drawMinDistance = false,
+			minDistance = 0,
+		}
+		local aimbotting = false
+		local sg = Instance.new("ScreenGui", coregui)
+		local espFolder = Instance.new("Folder", sg)
+
+		local circle = Instance.new("ImageLabel")
+		circle.Position = UDim2.new(0.5,0,0.5,-18)
+		circle.AnchorPoint = Vector2.new(0.5,0.5)
+		circle.Size = UDim2.new(0,options.minDistance*2,0,options.minDistance*2)
+		circle.BackgroundTransparency = 1
+		circle.ImageColor3 = colors.minDistance
+		circle.Image = "rbxassetid://3400997895"
+		if options.drawMinDistance then
+			circle.Parent = sg
+		end
+
+		local bodyParts = {
+			["Head"] = false,
+			["Chest"] = false,
+			["Abdomen"] = false,
+			["Hips"] = false,
+			["LeftUpperArm"] = false,
+			["RightUpperArm"] = false,
+			["RightLowerArm"] = false,
+			["LeftLowerArm"] = false,
+			["LeftHand"] = false,
+			["RightHand"] = false,
+			["LeftUpperLeg"] = false,
+			["RightUpperLeg"] = false,
+			["LeftLowerLeg"] = false,
+			["RightLowerLeg"] = false,
+			["LeftFoot"] = false,
+			["RightFoot"] = false
+		}
+		--// FUNCTIONS \\--
+		function mouseMove(x,y)
+			if syn  then
+				mousemoverel(x,y)
+			end
+		end
+		local function createBox(player)
+			local lines = Instance.new("Frame")
+			lines.Name = player.Name
+			lines.BackgroundTransparency = 1
+			lines.AnchorPoint = Vector2.new(0.5,0.5)
+
+			local outlines = Instance.new("Folder", lines)
+			outlines.Name = "outlines"
+			local inlines = Instance.new("Folder", lines)
+			inlines.Name = "inlines"
+
+			local outline1 = Instance.new("Frame", outlines)
+			outline1.Name = "left"
+			outline1.BorderSizePixel = 0
+			outline1.BackgroundColor3 = Color3.new(0,0,0)
+			outline1.Size = UDim2.new(0,-1,1,0)
+
+			local outline2 = Instance.new("Frame", outlines)
+			outline2.Name = "right"
+			outline2.BorderSizePixel = 0
+			outline2.BackgroundColor3 = Color3.new(0,0,0)
+			outline2.Position = UDim2.new(1,0,0,0)
+			outline2.Size = UDim2.new(0,1,1,0)
+
+			local outline3 = Instance.new("Frame", outlines)
+			outline3.Name = "up"
+			outline3.BorderSizePixel = 0
+			outline3.BackgroundColor3 = Color3.new(0,0,0)
+			outline3.Size = UDim2.new(1,0,0,-1)
+
+			local outline4 = Instance.new("Frame", outlines)
+			outline4.Name = "down"
+			outline4.BorderSizePixel = 0
+			outline4.BackgroundColor3 = Color3.new(0,0,0)
+			outline4.Position = UDim2.new(0,0,1,0)
+			outline4.Size = UDim2.new(1,0,0,1)
+
+			local inline1 = Instance.new("Frame", inlines)
+			inline1.Name = "left"
+			inline1.BorderSizePixel = 0
+			inline1.Size = UDim2.new(0,1,1,0)
+
+			local inline2 = Instance.new("Frame", inlines)
+			inline2.Name = "right"
+			inline2.BorderSizePixel = 0
+			inline2.Position = UDim2.new(1,0,0,0)
+			inline2.Size = UDim2.new(0,-1,1,0)
+
+			local inline3 = Instance.new("Frame", inlines)
+			inline3.Name = "up"
+			inline3.BorderSizePixel = 0
+			inline3.Size = UDim2.new(1,0,0,1)
+
+			local inline4 = Instance.new("Frame", inlines)
+			inline4.Name = "down"
+			inline4.BorderSizePixel = 0
+			inline4.Position = UDim2.new(0,0,1,0)
+			inline4.Size = UDim2.new(1,0,0,-1)
+
+			local text = Instance.new("TextLabel", lines)
+			text.Name = "nametag"
+			text.Position =  UDim2.new(0.5,0,0,-12)
+			text.Size = UDim2.new(0,100,0,-20)
+			text.AnchorPoint = Vector2.new(0.5,0.5)
+			text.BackgroundTransparency = 1
+			text.Text = player.Name
+			text.Font = Enum.Font.Code
+			text.TextSize = 14
+			text.TextStrokeTransparency = 0
+
+			local health = Instance.new("Frame", lines)
+			health.Name = "health"
+			health.Position = UDim2.new(0,1,1,-1)
+			health.Size = UDim2.new(0.1,0,1,-2)
+			health.AnchorPoint = Vector2.new(0,1)
+			health.BackgroundTransparency = 0
+			health.BackgroundColor3 = Color3.fromRGB(30,30,30)
+			health.BorderSizePixel = 0
+			local bar = Instance.new("Frame", health)
+			bar.Name = "bar"
+			bar.Position = UDim2.new(0,0,1,0)
+			bar.AnchorPoint = Vector2.new(0,1)
+			bar.BackgroundTransparency = 0
+			bar.BackgroundColor3 = Color3.fromRGB(0,255,127)
+			bar.BorderSizePixel = 0
+
+			return lines
+		end
+
+		local function updateEsp(player, box)
+			runser:BindToRenderStep(player.Name.."'s esp", 1, function()
+				local clientchar = workspace.Characters:FindFirstChild(client.Name)
+				local xMin = camera.ViewportSize.X
+				local yMin = camera.ViewportSize.Y
+				local xMax = 0
+				local yMax = 0
+				if player and player:FindFirstChild"Body" and player.Body:FindFirstChild"Head" then
+					local screenPos, vis = camera:WorldToScreenPoint(player.PrimaryPart.Position)
+					local nameTagPos = camera:WorldToScreenPoint(player.Body.Head.Position)
+					if vis then
+						box.Visible = true
+						local function getCorners(obj, size)
+							local corners = {
+								Vector3.new(obj.X+size.X/2, obj.Y+size.Y/2, obj.Z+size.Z/2);
+								Vector3.new(obj.X-size.X/2, obj.Y+size.Y/2, obj.Z+size.Z/2);
+
+								Vector3.new(obj.X-size.X/2, obj.Y-size.Y/2, obj.Z-size.Z/2);
+								Vector3.new(obj.X+size.X/2, obj.Y-size.Y/2, obj.Z-size.Z/2);
+
+								Vector3.new(obj.X-size.X/2, obj.Y+size.Y/2, obj.Z-size.Z/2);
+								Vector3.new(obj.X+size.X/2, obj.Y+size.Y/2, obj.Z-size.Z/2);
+
+								Vector3.new(obj.X-size.X/2, obj.Y-size.Y/2, obj.Z+size.Z/2);
+								Vector3.new(obj.X+size.X/2, obj.Y-size.Y/2, obj.Z+size.Z/2);
+							}
+							return corners
+						end
+						local i = 1
+						local allCorners = {}
+						for _,v in pairs(player.Body:GetChildren()) do
+							if bodyParts[v.Name] then
+								local a = getCorners(v.CFrame, v.Size)
+								for _,v in pairs(a) do
+									table.insert(allCorners, i, v)
+									i = i + 1
+								end
+							end
+						end
+						for i,v in pairs(allCorners) do
+							local pos = camera:WorldToScreenPoint(v)
+							if pos.X > xMax then
+								xMax = pos.X
+							end
+							if pos.X < xMin then
+								xMin = pos.X
+							end
+							if pos.Y > yMax then
+								yMax = pos.Y
+							end
+							if pos.Y < yMin then
+								yMin = pos.Y
+							end
+						end
+						local xSize = xMax - xMin
+						local ySize = yMax - yMin
+						box.Position = UDim2.new(0,xMin+(Vector2.new(xMax,0)-Vector2.new(xMin,0)).magnitude/2,0,yMin+(Vector2.new(0,yMax)-Vector2.new(0,yMin)).magnitude/2)
+						box.Size = UDim2.new(0,xSize,0,ySize)
+
+						local ignore = {clientchar, camera, workspace:FindFirstChild"Arms"}
+						for _,v in pairs(workspace:GetChildren()) do
+							if v:IsA"Model" and v.Name ~= "Arms" then
+								table.insert(ignore, 4, v)
+							end
+						end
+						local ray = Ray.new(camera.CFrame.p, (player.Body.Head.Position-camera.CFrame.p).unit*1000)
+						local hit, pos = workspace:FindPartOnRayWithIgnoreList(ray, ignore, false, false)
+						local suffix
+						if hit and hit:FindFirstAncestor(player.Name) then
+							suffix = "_visible"
+						else
+							suffix = ""
+						end
+						for _,v in pairs(box.inlines:GetChildren()) do
+							v.BackgroundColor3 = colors["esp"..suffix]
+						end
+						box.nametag.TextColor3 = Color3.fromRGB(255, 255, 255)
+						if player:FindFirstChild"Health" then
+							box.health.bar.Size = UDim2.new(1,0,player.Health.Value/150,0)
+						end
+					else
+						box.Visible = false
+					end
+				else
+					box.Visible = false
+				end
+			end)
+		end
+
+		local function checkTeam(player, caller)
+			local omegaTeam = game.Teams.Omega.Players
+			local betaTeam = game.Teams.Beta.Players
+			local myTeam
+			if omegaTeam:FindFirstChild(client.Name) then
+				myTeam = "Omega"
+			elseif betaTeam:FindFirstChild(client.Name) then
+				myTeam = "Beta"
+			end
+			local enemyTeam
+			if omegaTeam:FindFirstChild(player.Name) then
+				enemyTeam = "Omega"
+			elseif betaTeam:FindFirstChild(player.Name) then
+				enemyTeam = "Beta"
+			end
+			if enemyTeam ~= myTeam then
+				if caller == "esp" then
+					local box = createBox(player)
+					updateEsp(player, box)
+					box.Parent = espFolder
+				end
+				return true
+			else
+				return false
+			end
+		end
+
+
+
+
+
+		for _,player in pairs(workspace.Characters:GetChildren()) do
+			checkTeam(player, "esp")
+		end
+
+		workspace.Characters.ChildAdded:connect(function(player)
+			checkTeam(player, "esp")
+		end)
+
+		workspace.Characters.ChildRemoved:connect(function(player)
+			runser:UnbindFromRenderStep(player.Name.."'s esp")
+			if espFolder:FindFirstChild(player.Name) then
+				espFolder[player.Name]:Destroy()
+			end
+		end)
+
+		local LocalPlayer, Characters, ESPList, LocalCharacter = game:GetService('Players').LocalPlayer, workspace.Characters, {}
+
+		local Leaderboard = LocalPlayer.PlayerGui.LeaderboardGui.Leaderboard
+		local function GetTeam(Player)
+			local Name = Player.Name
+			for i,v in next, Leaderboard.Teams:GetDescendants() do
+				if v.Name == 'NameLabel' and v.Text == Name then
+					return v.Parent.Parent.Parent
+				end
+			end
+		end
+
+		local Camera, Div = workspace.CurrentCamera, Vector2.new(2,2)
+		local function GetNearestToCenter()
+			local Center = Camera.ViewportSize / Div
+			local Character, CharacterDistance, ScreenPosition = nil, 0, nil
+			-- Created by Peyton @ V3rmillion
+			for i,v in next, Characters:GetChildren() do
+				if v.Name ~= LocalPlayer.Name and GetTeam(v) ~= GetTeam(LocalPlayer) and v:FindFirstChild('Health') and v.Health.Value > 0 and v:FindFirstChild('Hitbox') and v.Hitbox:FindFirstChild('Head') then
+					local clientchar = workspace.Characters:FindFirstChild(client.Name)
+					local ignore = {clientchar, camera, workspace:FindFirstChild"Arms"}
+					for _,v in pairs(workspace:GetChildren()) do
+						if v:IsA"Model" and v.Name ~= "Arms" then
+							table.insert(ignore, 4, v)
+						end
+					end
+					local ray = Ray.new(camera.CFrame.p, (v.Body.Head.Position-camera.CFrame.p).unit*1000)
+					local hit, pos = workspace:FindPartOnRayWithIgnoreList(ray, ignore, false, false)
+					if hit and hit:FindFirstAncestor(v.Name) then
+						local Position, OnScreen = Camera:WorldToViewportPoint(v.Hitbox.Head.Position)
+						if OnScreen then
+							local Vec2 = Vector2.new(Position.X, Position.Y)
+							local Distance = (Vec2 - Center).magnitude
+							if not Character or CharacterDistance > Distance then
+								Character, CharacterDistance, ScreenPosition = v, Distance, Vec2
+							end
+						end
+					end
+				end
+			end
+			return ScreenPosition and Center and (ScreenPosition - Center) or nil
+		end
+
+
+		local function Add(Character)
+			if Character == workspace.Characters:FindFirstChild(LocalPlayer.Name) then
+				LocalCharacter = Character
+			elseif GetTeam(Character) ~= GetTeam(LocalPlayer) then
+				--ESPList[Character] = NewCircle()
+			end
+		end
+
+		local function Remove(Character)
+			if ESPList[Character] then
+				ESPList[Character]:Remove()
+				ESPList[Character] = nil
+			end
+		end
+
+
+		for i,v in next, Characters:GetChildren() do Add(v) end
+		Characters.ChildAdded:Connect(Add)
+		Characters.ChildRemoved:Connect(Remove)
 	end
 	
 	local PlayerTable=getupvalue(require(game.ReplicatedStorage.TS).Characters.GetCharacter,1)
@@ -171,6 +864,8 @@ local Window = UI_LIB:Window({
 		end
 	end)
 end
+
+Window:LoadDefaultConfig("CloudWare/BadBussiness")
 
 for Index,Player in pairs(PlayerService:GetPlayers()) do
 	if Player == LocalPlayer then continue end

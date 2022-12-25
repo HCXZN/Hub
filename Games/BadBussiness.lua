@@ -172,8 +172,6 @@ local Window = UI_LIB:Window({
 	end)
 end
 
-UI_LIB:Init()
-
 for Index,Player in pairs(PlayerService:GetPlayers()) do
 	if Player == LocalPlayer then continue end
 	CloudWare.Utilities.Drawing:AddESP(Player,"Player","ESP/Player",Window.Flags)

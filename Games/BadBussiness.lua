@@ -69,10 +69,10 @@ msg("Bypassed Client AntiCheat.")
 local Window = UI_LIB:Window({
 	Name = "Bad Business",
 	Position = UDim2.new(0.05,0,0.5,-248)
-}) do Window:Watermark({Enabled = true})
+}) do Window:Watermark({Enabled = false})
 	local VisualsTab = Window:Tab({Name = "Visuals"}) do
-		local GlobalSection = VisualsTab:Section({Name = "ESP",Side = "Left"}) do
-			GlobalSection:Colorpicker({Name = "Enable ESP",Flag = "ESP/Enable",Value = {0.3333333432674408,0.6666666269302368,1,0,false}})
+		local GlobalSection = VisualsTab:Toggle({Name = "ESP",Side = "Left"}) do
+			GlobalSection:Colorpicker({Name = "Enable ESP",Flag = "ESP/Enable",Value = false})
 			
 		end
 		
